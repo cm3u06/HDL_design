@@ -6,18 +6,18 @@ module shift_reg_fifo
   parameter   AW_M1 = 3   // ceil(log2(DP))-1
 )
 (
-  input                              clk ,
-  input                            rst_n ,
+  input                       clk         ,
+  input                       rst_n       ,
 
-  input                            wr ,
-  input         [DW_M1:0]         w_data ,
+  input                       wr          ,
+  input          [DW_M1:0]    w_data      ,
   
-  input                            rd ,
-  output reg    [DW_M1:0]         r_data ,
+  input   wire                rd          ,
+  output  reg    [DW_M1:0]    r_data      ,
 
-  output                            full ,
-  output                           empty ,
-  output        [AW_M1:0]    size_remain
+  output  reg                 full        ,
+  output                      empty       ,
+  output         [AW_M1:0]    size_remain
 );
 
 
@@ -26,8 +26,8 @@ reg [DW_M1:0]   MEM[0:DP_M1];
 
 reg [AW_M1+1:0]  fifo_level_m1;
 
-assign  full  = fifo_level_m1 == DP_M1;
-assign  empty = fifo_level_m1 == -1;
+assign  full        = fifo_level_m1 == DP_M1;
+assign  empty       = fifo_level_m1 == -1;
 assign  size_remain = DP_M1 - fifo_level_m1;
 
 wire    w_en  = wr & !full;
@@ -65,20 +65,20 @@ module shift_reg_fifo_rdy_ack
   parameter   AW_M1 = 3   // ceil(log2(DP))-1
 )
 (
-  input                              clk ,
-  input                            rst_n ,
+  input                  clk         ,
+  input                  rst_n       ,
 
-  input                            i_rdy ,
-  output                           i_ack ,
-  input         [DW_M1:0]         i_data ,
+  input                  i_rdy       ,
+  output                 i_ack       ,
+  input     [DW_M1:0]    i_data      ,
   
-  output                       o_rdy ,
-  input                        o_ack ,
-  output    [DW_M1:0]         o_data ,
+  output                 o_rdy       ,
+  input                  o_ack       ,
+  output    [DW_M1:0]    o_data      ,
 
-  output                            full ,
-  output                           empty ,
-  output        [AW_M1:0]    size_remain
+  output                 full        ,
+  output                 empty       ,
+  output    [AW_M1:0]    size_remain
 );
 
 
@@ -98,18 +98,18 @@ shift_reg_fifo
 )
 I_fifo
 (
-.          clk (        clk ),
-.        rst_n (      rst_n ),
-.              (            )
-.        wr (      wr ),
-.       w_data (     i_data ),
-.              (            )
-.        rd (      rd ),
-.       r_data (     o_data ),
-.              (            )
-.         full (       full ),
-.        empty (      empty ),
-.  size_remain (size_remain )
+  .clk            ( clk         ) ,
+  .rst_n          ( rst_n       ) ,
+
+  .wr             ( wr          ) ,
+  .w_data         ( w_data      ) ,
+  
+  .rd             ( rd          ) ,
+  .r_data         ( r_data      ) ,
+
+  .full           ( full        ) ,
+  .empty          ( empty       ) ,
+  .size_remain    ( size_remain )
 );
 
 wire  o_deal = o_rdy & o_ack;

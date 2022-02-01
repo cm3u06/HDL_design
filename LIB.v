@@ -6,18 +6,18 @@ module shift_reg_fifo
   parameter   AW_M1 = 3   // ceil(log2(DP))-1
 )
 (
-  input                       clk         ,
-  input                       rst_n       ,
+  input                  clk         ,
+  input                  rst_n       ,
 
-  input                       wr          ,
-  input          [DW_M1:0]    w_data      ,
+  input                  wr          ,
+  input     [DW_M1:0]    w_data      ,
   
-  input   wire                rd          ,
-  output  reg    [DW_M1:0]    r_data      ,
+  input                  rd          ,
+  output    [DW_M1:0]    r_data      ,
 
-  output  reg                 full        ,
-  output                      empty       ,
-  output         [AW_M1:0]    size_remain
+  output                 full        ,
+  output                 empty       ,
+  output    [AW_M1:0]    size_remain
 );
 
 
@@ -87,7 +87,7 @@ wire    i_ack = !full;
 
 
 reg     r_vld   ;
-wire    rd = !empty && !r_vld | o_ack;
+wire    rd = !empty && ( !r_vld | o_ack );
 
 
 shift_reg_fifo
@@ -102,18 +102,18 @@ I_fifo
   .rst_n          ( rst_n       ) ,
 
   .wr             ( wr          ) ,
-  .w_data         ( w_data      ) ,
+  .w_data         ( i_data      ) ,
   
   .rd             ( rd          ) ,
-  .r_data         ( r_data      ) ,
+  .r_data         ( o_data      ) ,
 
   .full           ( full        ) ,
   .empty          ( empty       ) ,
   .size_remain    ( size_remain )
 );
 
-wire  o_deal = o_rdy & o_ack;
-wire  o_rdy = r_vld;
+wire   o_deal = o_rdy & o_ack;
+assign o_rdy = r_vld;
 
 always @(posedge clk or negedge rst_n)
   if (!rst_n)

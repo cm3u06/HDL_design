@@ -1,10 +1,12 @@
 //`define WR_DEBUG
+//`define LIB_TB_1
+`define LIB_TB_2
 
 module shift_reg_fifo
 #(
   parameter   DP_M1 = 7,
   parameter   DW_M1 = 7,
-  parameter   AW_M1 = 3   // ceil(log2(DP))-1
+  parameter   AW_M1 = 3   // ceil(log2(DP))
 )
 (
   input                       clk         ,
@@ -63,7 +65,7 @@ module shift_reg_fifo_rdy_ack
 #(
   parameter  DP_M1  =    7 ,
   parameter  DW_M1  =    7 ,
-  parameter  AW_M1  =    3 // ceil(log2(DP))-1
+  parameter  AW_M1  =    3 // ceil(log2(DP))
 )
 (
   input                  clk         ,
@@ -95,7 +97,7 @@ shift_reg_fifo
 #(
   .DP_M1    ( DP_M1 ) ,
   .DW_M1    ( DW_M1 ) ,
-  .AW_M1    ( AW_M1 ) // ceil(log2(DP))+1-1
+  .AW_M1    ( AW_M1 ) // ceil(log2(DP))
 )
 I_fifo
 (
@@ -135,7 +137,7 @@ module cdc_reg_fifo
 #(
   parameter   DP_M1 = 7,
   parameter   DW_M1 = 7,
-  parameter   AW_M1 = 3,  // ceil(log2(DP))-1
+  parameter   AW_M1 = 3,  // ceil(log2(DP))
   parameter   SYNC_CLKI = 2,
   parameter   SYNC_CLKO = 2
 )
@@ -163,6 +165,7 @@ reg  [AW_M1:0]   clki_gray_addr;
 wire [AW_M1:0]   next_clki_bin_addr;
 wire [AW_M1:0]   next_clki_gray_addr;
 reg  [AW_M1:0]   clki_from_clko_gray_addr[1:SYNC_CLKI];
+wire [AW_M1:0]   clki_from_clko_gray_addr_SYNC_CLKI = clki_from_clko_gray_addr[SYNC_CLKI];
 
 
 reg  [AW_M1:0]   clko_bin_addr;
@@ -170,13 +173,14 @@ reg  [AW_M1:0]   clko_gray_addr;
 wire [AW_M1:0]   next_clko_bin_addr;
 wire [AW_M1:0]   next_clko_gray_addr;
 reg  [AW_M1:0]   clko_from_clki_gray_addr[1:SYNC_CLKO];
+wire [AW_M1:0]   clko_from_clki_gray_addr_SYNC_CLKO = clko_from_clki_gray_addr[SYNC_CLKO];
 
 wire    i_deal = i_rdy & i_ack;
 wire    o_deal = o_rdy & o_ack;
 
 
-wire     w_enable =  !( {clki_gray_addr [AW_M1:AW_M1-2], clki_gray_addr [AW_M1-2:0] }  == { ~clki_from_clko_gray_addr[SYNC_CLKI][AW_M1:AW_M1-2],  clki_from_clko_gray_addr[SYNC_CLKI][AW_M1-2:0] }  );
-wire     r_enable =  !( clki_gray_addr [AW_M1:0]                                       ==  clko_from_clki_gray_addr[SYNC_CLKO][AW_M1:0]                                                             );
+wire     w_enable =  !( clki_gray_addr [AW_M1:0]  == { ~clki_from_clko_gray_addr[SYNC_CLKI][AW_M1:AW_M1-1],  clki_from_clko_gray_addr[SYNC_CLKI][AW_M1-2:0] }  );
+wire     r_enable =  !( clko_gray_addr [AW_M1:0]  ==  clko_from_clki_gray_addr[SYNC_CLKO][AW_M1:0]                                                             );
 
 wire     w_deal   = w_enable & i_rdy;
 assign   next_clki_bin_addr = w_deal ? clki_bin_addr+1 : clki_bin_addr;
@@ -235,7 +239,7 @@ begin
     clko_gray_addr  <=  next_clko_gray_addr;
     for (i = 1; i <= SYNC_CLKO; i++) begin
       if (i==1)
-        clko_from_clki_gray_addr[i]  <=  clko_gray_addr;
+        clko_from_clki_gray_addr[i]  <=  clki_gray_addr;
       else
         clko_from_clki_gray_addr[i]  <=  clko_from_clki_gray_addr[i-1];
     end
@@ -257,14 +261,15 @@ endmodule
 
 
 
-`ifdef WR_DEBUG
-module LIB_TB ();
+
+ `ifdef LIB_TB_1
+module LIB_TB_1 ();
 
 parameter   DP_M1 = 7;
 parameter   DW_M1 = 7;
 parameter   AW_M1 = 3;
 parameter   CYCLE = 10;
-parameter   INITIAL_COUNT = 10;
+parameter   INITIAL_COUNT = 30;
 parameter   COMPARE_COUNT = 1000;
 
 reg                clk         ;
@@ -307,9 +312,9 @@ always #(CYCLE/2) clk = ~clk;
 
 shift_reg_fifo_rdy_ack
 #(
-.DP_M1  (  7 ) ,
-.DW_M1  (  7 ) ,
-.AW_M1  (  3 ) // ceil(log2(DP))-1
+.DP_M1    ( DP_M1 ) ,
+.DW_M1    ( DW_M1 ) ,
+.AW_M1    ( AW_M1 ) // ceil(log2(DP))
 )
 I_DUT
 (
@@ -345,7 +350,7 @@ o_ack  = 0;
 
 wait(!rst_n);
 @(posedge rst_n);
-#( CYCLE*INITIAL_COUNT );
+#( CYCLE*10 );
 
 fork
   // write
@@ -365,6 +370,7 @@ fork
 
   // read
   begin
+    #( CYCLE*INITIAL_COUNT );
     @(posedge clk);
     o_ack <= 0;
     forever begin
@@ -435,3 +441,197 @@ always @(posedge clk or negedge rst_n)
 
   endmodule
 `endif
+
+
+ `ifdef LIB_TB_2
+module LIB_TB_2 ();
+
+parameter   DP_M1 = 7;
+parameter   DW_M1 = 7;
+parameter   AW_M1 = 3;
+parameter   CLKI_CYCLE = 5;
+parameter   CLKO_CYCLE = 10;
+parameter   INITIAL_COUNT = 30;
+parameter   COMPARE_COUNT = 1000;
+
+reg               i_clk   ;
+reg               i_rst_n ;
+reg               i_rdy   ;
+wire              i_ack   ;
+reg  [DW_M1:0]    i_data  ;
+
+reg               o_clk   ;
+reg               o_rst_n ;
+wire              o_rdy   ;
+reg               o_ack   ;
+wire [DW_M1:0]    o_data  ;
+
+
+integer i;
+
+///////////////////////////////////////////////////////////////
+//   CLK, RST
+///////////////////////////////////////////////////////////////
+
+initial begin
+  i_clk = 0;
+  i_rst_n = 1;
+
+  #CLKI_CYCLE;
+  i_rst_n = 0;
+  #CLKI_CYCLE;
+  i_rst_n = 1;
+end
+
+initial begin
+  o_clk = 0;
+  o_rst_n = 1;
+
+  #CLKO_CYCLE;
+  o_rst_n = 0;
+  #CLKO_CYCLE;
+  o_rst_n = 1;
+end
+
+always #(CLKI_CYCLE/2) i_clk = ~i_clk;
+always #(CLKO_CYCLE/2) o_clk = ~o_clk;
+
+
+///////////////////////////////////////////////////////////////
+//   DUT
+///////////////////////////////////////////////////////////////
+
+cdc_reg_fifo
+#(
+.DP_M1  (  DP_M1 ) ,
+.DW_M1  (  DW_M1 ) ,
+.AW_M1  (  AW_M1 ) // ceil(log2(DP))
+)
+I_DUT
+(
+  .i_clk      ( i_clk   ) ,
+  .i_rst_n    ( i_rst_n ) ,
+  .i_rdy      ( i_rdy   ) ,
+  .i_ack      ( i_ack   ) ,
+  .i_data     ( i_data  ) ,
+  
+  .o_clk      ( o_clk   ) ,
+  .o_rst_n    ( o_rst_n ) ,
+  .o_rdy      ( o_rdy   ) ,
+  .o_ack      ( o_ack   ) ,
+  .o_data     ( o_data  )
+
+);
+
+
+///////////////////////////////////////////////////////////////
+// stimulus
+///////////////////////////////////////////////////////////////
+
+// driver
+reg rand_rdy;
+integer wtime, rtime;
+initial begin
+
+  i_rdy  = 0;
+  i_data = 'bx;
+
+  wait(!i_rst_n);
+  @(posedge i_rst_n);
+  #( CLKI_CYCLE*10 );
+
+  // write
+  begin
+    @(posedge i_clk);
+    i_rdy  <= 1;
+    i_data <= 0;
+
+    forever begin
+      @(posedge i_clk);
+      wtime = ( $time>>2 )*$random();
+      rand_rdy = ( {$random(wtime)}%5 ) == 1; // control input throughput
+      i_rdy <= rand_rdy;
+      i_data <= rand_rdy ? i_data+1 : i_data;
+    end
+  end
+
+end
+
+initial begin
+
+  o_ack  = 0;
+
+  wait(!o_rst_n);
+  @(posedge o_rst_n);
+  #( CLKO_CYCLE*INITIAL_COUNT );
+
+  // read
+  forever begin
+    @(posedge o_clk);
+    rtime = ( $time>>2 )*$random();
+    o_ack <= {$random(rtime)}%2;
+  end
+
+end
+
+// capture
+parameter MEM_DEPTH_M1 = COMPARE_COUNT+INITIAL_COUNT;
+reg   [DW_M1:0]     MEM[0:MEM_DEPTH_M1];
+integer   mem_w_ptr ;
+
+always @(posedge i_clk or negedge i_rst_n)
+if (!i_rst_n) begin
+  for (i = 0; i <= MEM_DEPTH_M1; i++) begin
+    MEM[i]<=0;
+  end
+  mem_w_ptr <= 0;
+end
+else begin
+  for (i = 0; i <= MEM_DEPTH_M1; i++) begin
+    MEM[i]<= i_rdy&i_ack && i==mem_w_ptr ? i_data : MEM[i];
+  end
+  mem_w_ptr <= i_rdy&i_ack ? mem_w_ptr+1 : mem_w_ptr;
+end
+
+// compare
+integer   mem_r_ptr ;
+reg[8*1000:0] s;
+integer   pass_cnt;
+always @(posedge o_clk or negedge o_rst_n)
+  if (!o_rst_n) begin
+    mem_r_ptr   <= 0;
+    pass_cnt    <= 0;
+  end
+  else begin
+    if (mem_r_ptr >= COMPARE_COUNT)
+    begin
+      $display("########################################################################################");
+      $display("[%t:%m] comparison result : %s !!!!!!!!", $time, (pass_cnt==mem_r_ptr) ? "PASS" : "FAIL");
+      $display("########################################################################################");
+      $finish;
+    end
+    else begin
+      if (o_rdy&o_ack)
+      begin
+        mem_r_ptr <= mem_r_ptr+1;
+        $sformat(s,"[%t:%m] MEM[%08d] = %08d, o_data = %08d",$time, mem_r_ptr, MEM[mem_r_ptr], o_data);
+        if (MEM[mem_r_ptr] == o_data)
+        begin
+          $display("%s => pass !", s);
+          pass_cnt <= pass_cnt + 1;
+        end
+        else
+          $display("%s => fail !", s);
+      end
+    end
+  end
+
+  initial begin
+    $dumpfile("dump.vcd"); $dumpvars; 
+    //repeat(1000) @(posedge o_clk);
+    //$finish;
+  end
+
+  endmodule
+`endif
+

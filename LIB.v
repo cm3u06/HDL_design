@@ -1,6 +1,7 @@
 //`define WR_DEBUG
-//`define LIB_TB_1
-`define LIB_TB_2
+`define LIB_TB_1
+//`define LIB_TB_2
+`define WR_LIB_BEH_SRAM
 
 module shift_reg_fifo
 #(
@@ -262,12 +263,207 @@ endmodule
 
 
 
+
+module sram_1p
+#(
+  parameter  DP_M1  =    7 ,
+  parameter  DW_M1  =    7 ,
+  parameter  AW_M1  =    2 // ceil(log2(DP))-1
+)
+(
+  input                  clk         ,
+  input                  rst_n       ,
+
+  input                  sram_ce     ,
+  input                  sram_we     ,
+  input     [AW_M1:0]    sram_addr   ,
+  input     [DW_M1:0]    sram_w_data ,
+  output    [DW_M1:0]    sram_r_data
+);
+
+`ifndef WR_LIB_BEH_SRAM
+`else
+integer i;
+reg [DW_M1:0]    mem[0:DP_M1];
+
+// write
+always @(posedge clk)
+  for (i = 0; i <= DP_M1; i++) begin
+    mem[i] <= ( sram_ce & sram_we ) && i==sram_addr ? sram_w_data : mem[i];
+  end
+
+// read
+reg [AW_M1:0] sram_addr_latched;
+always @(posedge clk)
+  sram_addr_latched <= sram_ce&!sram_we ? sram_addr : sram_addr_latched; // non-volatile
+
+assign  sram_r_data = mem[sram_addr_latched];
+`endif
+
+  
+endmodule
+
+
+
+
+module sram_fifo_rdy_ack
+#(
+  parameter  SRAM_DP_M1  =    31,
+  parameter  DW_M1       =    7 ,
+  parameter  SRAM_AW_M1  =    4 ,// ceil(log2(DP))-1
+  parameter  READ_FIRST  =    0 // 0: write-first; 1:read-first
+)
+(
+  input                         clk         ,
+  input                         rst_n       ,
+
+  input                         i_rdy       ,
+  output                        i_ack       ,
+  input            [DW_M1:0]    i_data      ,
+  
+  output  reg                   o_rdy       ,
+  input                         o_ack       ,
+  output           [DW_M1:0]    o_data      ,
+
+  output                        full        ,
+  output                        empty       ,
+  output    [SRAM_AW_M1+1:0]    size_remain
+);
+
+parameter   DP_M1  = SRAM_DP_M1*2+1;
+
+reg   [SRAM_AW_M1+2:0]     w_ptr;
+reg   [SRAM_AW_M1+2:0]     r_ptr;
+reg   [SRAM_AW_M1+2:0]     fifo_level;
+wire  wr_enable ;
+wire  rd_enable ;
+
+assign  full =   ( w_ptr[SRAM_AW_M1+2] != r_ptr[SRAM_AW_M1+2] ) && ( w_ptr[SRAM_AW_M1+1:0] == r_ptr[SRAM_AW_M1+1:0] ) ;
+assign  empty =  w_ptr == r_ptr;
+assign  wr_enable = !full  && ( READ_FIRST ? !(rd_enable && w_ptr[0] == r_ptr[0]) : 1'b1 );
+assign  rd_enable = !empty && ( READ_FIRST ? 1'b1 : !(wr_enable && w_ptr[0] == r_ptr[0]) );
+
+assign  size_remain   =   DP_M1+1 - fifo_level;
+
+assign  i_ack = wr_enable;
+//
+wire      w_deal = i_rdy & wr_enable;
+wire      r_deal = rd_enable & (!o_rdy | o_ack);
+wire      o_deal = o_rdy & o_ack;
+
+always @(posedge clk or negedge rst_n)
+  if (!rst_n) begin
+    w_ptr     <=    0;
+    r_ptr     <=    0;
+    fifo_level <=   0;
+  end
+  else begin
+    w_ptr     <=    w_deal ? w_ptr[SRAM_AW_M1+1:0]==DP_M1 ? { ~w_ptr[SRAM_AW_M1+2],{(SRAM_AW_M1+2){1'b0}} } : w_ptr+1 : w_ptr;
+    r_ptr     <=    r_deal ? r_ptr[SRAM_AW_M1+1:0]==DP_M1 ? { ~r_ptr[SRAM_AW_M1+2],{(SRAM_AW_M1+2){1'b0}} } : r_ptr+1 : r_ptr;
+    fifo_level <=   fifo_level + w_deal - r_deal;
+  end
+
+
+
+always @(posedge clk or negedge rst_n)
+  if (!rst_n)
+    o_rdy   <=   0;
+  else
+    o_rdy   <=   r_deal ? 1 : o_deal ? 0 : o_rdy;
+
+reg sram_r_sel;
+always @(posedge clk or negedge rst_n)
+  if (!rst_n) 
+    sram_r_sel <= 0;
+  else
+    sram_r_sel <= r_deal ? r_ptr[0] : sram_r_sel;
+
+
+//////////////////////////////////////////////////////////////
+// SRAM 1P x 2
+//////////////////////////////////////////////////////////////
+wire                      sram_ce_0     = ( wr_enable & !w_ptr[0] ) | (rd_enable & !r_ptr[0]);
+wire                      sram_we_0     = ( wr_enable & !w_ptr[0] );
+wire    [SRAM_AW_M1:0]    sram_addr_0   = wr_enable & !w_ptr[0] ? w_ptr[SRAM_AW_M1+1:1] : r_ptr[SRAM_AW_M1+1:1];
+wire    [DW_M1:0]         sram_w_data_0 = i_data;
+wire    [DW_M1:0]         sram_r_data_0 ;
+
+wire                      sram_ce_1     = ( wr_enable & w_ptr[0] ) | (rd_enable & r_ptr[0]);
+wire                      sram_we_1     = ( wr_enable & w_ptr[0] );
+wire    [SRAM_AW_M1:0]    sram_addr_1   = wr_enable & w_ptr[0] ? w_ptr[SRAM_AW_M1+1:1] : r_ptr[SRAM_AW_M1+1:1];
+wire    [DW_M1:0]         sram_w_data_1 = i_data;
+wire    [DW_M1:0]         sram_r_data_1 ;
+
+sram_1p
+#(
+  .DP_M1    ( SRAM_DP_M1 ) ,
+  .DW_M1    ( DW_M1      ) ,
+  .AW_M1    ( SRAM_AW_M1 ) // ceil(log2(DP))
+)
+I_sram_1p_0
+(
+  .clk            ( clk           ) ,
+  .rst_n          ( rst_n         ) ,
+
+  .sram_ce        ( sram_ce_0     ) ,
+  .sram_we        ( sram_we_0     ) ,
+  .sram_addr      ( sram_addr_0   ) ,
+  .sram_w_data    ( sram_w_data_0 ) ,
+  .sram_r_data    ( sram_r_data_0 )
+);
+
+sram_1p
+#(
+  .DP_M1    ( SRAM_DP_M1 ) ,
+  .DW_M1    ( DW_M1      ) ,
+  .AW_M1    ( SRAM_AW_M1 ) // ceil(log2(DP))
+)
+I_sram_1p_1
+(
+  .clk            ( clk           ) ,
+  .rst_n          ( rst_n         ) ,
+
+  .sram_ce        ( sram_ce_1     ) ,
+  .sram_we        ( sram_we_1     ) ,
+  .sram_addr      ( sram_addr_1   ) ,
+  .sram_w_data    ( sram_w_data_1 ) ,
+  .sram_r_data    ( sram_r_data_1 )
+);
+
+
+//////////////////////////////////////////////////////////////
+//  output latch
+//////////////////////////////////////////////////////////////
+
+wire  [DW_M1:0]  sram_r_data  =   sram_r_sel  ? sram_r_data_1   : sram_r_data_0;
+reg   [DW_M1:0]  sram_r_data_latched;
+reg   r_deal_d1;
+
+always @(posedge clk)
+begin
+  r_deal_d1   <=  r_deal;
+  sram_r_data_latched   <=  r_deal_d1   ?   sram_r_data   : sram_r_data_latched;
+end
+
+assign  o_data  =   r_deal_d1  ? sram_r_data   : sram_r_data_latched;
+  
+endmodule
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//    LIB TB
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
  `ifdef LIB_TB_1
 module LIB_TB_1 ();
 
-parameter   DP_M1 = 7;
+parameter   DP_M1 = 31;
 parameter   DW_M1 = 7;
-parameter   AW_M1 = 3;
+parameter   AW_M1 = 4;
 parameter   CYCLE = 10;
 parameter   INITIAL_COUNT = 30;
 parameter   COMPARE_COUNT = 1000;
@@ -310,11 +506,18 @@ always #(CYCLE/2) clk = ~clk;
 //   DUT
 ///////////////////////////////////////////////////////////////
 
-shift_reg_fifo_rdy_ack
+//shift_reg_fifo_rdy_ack
+//#(
+//.DP_M1    ( DP_M1 ) ,
+//.DW_M1    ( DW_M1 ) ,
+//.AW_M1    ( AW_M1 ) // ceil(log2(DP))
+//)
+sram_fifo_rdy_ack
 #(
-.DP_M1    ( DP_M1 ) ,
-.DW_M1    ( DW_M1 ) ,
-.AW_M1    ( AW_M1 ) // ceil(log2(DP))
+.SRAM_DP_M1    ( DP_M1 ) ,
+.DW_M1         ( DW_M1 ) ,
+.SRAM_AW_M1    ( AW_M1 ) , // ceil(log2(DP))
+.READ_FIRST    ( 1 ) 
 )
 I_DUT
 (
@@ -362,7 +565,7 @@ fork
     forever begin
       @(posedge clk);
       wtime = ( $time>>2 )*$random();
-      rand_rdy = {$random(wtime)}%2;
+      rand_rdy = {$random(wtime)}%8 == 0;
       i_rdy <= rand_rdy;
       i_data <= rand_rdy ? i_data+1 : i_data;
     end
